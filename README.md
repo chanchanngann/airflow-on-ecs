@@ -37,11 +37,13 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 1. Set up networking (vpc, subnets) and bastion host
 2. Build custom image in bastion host
 3. Push the image to ECR
+   
 **Stage 2**
 4. Create RDS (airflow metadata DB)
 5. Create Redis (Celery broker)
 6. Create ECS cluster
 7. Create & Run airflow-init ECS task (one-off task)
+   
 **Stage 3**
 8. Create ALB, target groups & listener rules
 9. Create EFS for Gitea container (mount volume for dags)
@@ -53,9 +55,11 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 		airflow-worker  
 		airflow-triggerer  
 		airflow-dag-processor
+		
 **Stage 4**
 12. Create certificate and upload to ASM
 13. Add DNS to local hosts file
+    
 **Stage 5**
 14. Test push dag to Gitea
 15. Test dbt pipeline in airflow to snowflake
