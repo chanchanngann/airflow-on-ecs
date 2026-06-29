@@ -63,7 +63,7 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
     
 # Stage 5
 - Test push dag to Gitea
-- Test dbt pipeline in airflow to snowflake
+- Test dbt + Snowflake pipeline on airflow
 ```
 ---
 ### Stage 1 - Push the images to ECR
@@ -221,7 +221,7 @@ Then, the aiflow-init task will stop and show `Essential container in task exite
 
 ---
 ### Stage 3 - Set up Airflow and Gitea
-```ruby
+```
 ALB
 ├── :80  
 │    └── Redirect -> 443  
@@ -240,6 +240,10 @@ terraform apply
 ---
 ### Stage 4 - DNS routing
 
+```
+https://rachel.airflow.com → ALB HTTPS listener → Airflow ECS service  
+https://rachel.gitea.com → same ALB HTTPS listener → Gitea ECS service
+```
 1. Get the public IP of ALB
 ```ruby
 nslookup airflow-alb-123456789.xxx.elb.amazonaws.com
