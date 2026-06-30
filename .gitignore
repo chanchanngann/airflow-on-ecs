@@ -1,2 +1,11 @@
 .DS_Store
 */.DS_Store
+
+terraform.tfstate
+terraform.tfstate.*
+
+terraform.tfvars
+
+acm.tf
+
+_clean_terraform.sh
