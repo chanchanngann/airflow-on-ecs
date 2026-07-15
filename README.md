@@ -1,6 +1,6 @@
 # Airflow on AWS ECS Fargate
 
-This project deploys Apache Airflow on AWS ECS Fargate using the Celery Executor and Terraform. The objective is to evaluate a scalable Airflow architecture that supports distributed task execution, Git-based DAG deployment while maintaining a fully containerized and serverless infrastructure.
+This exercise deploys Apache Airflow on AWS ECS Fargate using the Celery Executor and Terraform. The objective is to evaluate a scalable Airflow architecture that supports distributed task execution, Git-based DAG deployment while maintaining a fully containerized and serverless infrastructure.
 
 Finally, a simple dag is deployed on Airflow to integrate dbt for data transformation in Snowflake.
 ## Architecture Goals
@@ -35,19 +35,20 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 ## Execution flow
 ```ruby
 # --- Stage 1 ---
-- Set up networking (vpc, subnets) and bastion host
+- Set up networking (vpc, subnets)
+
+# --- Stage 2 ---
+- Set up bastion host
 - Build custom image in bastion host
 - Push the image to ECR
    
-# --- Stage 2 ---
+# --- Stage 3 ---
 - Create RDS (airflow metadata DB)
 - Create Redis (Celery broker)
 - Create ECS cluster
 - Create & Run airflow-init ECS task (one-off task)
    
-# --- Stage 3 ---
-- Create ALB, target groups & listener rules
-- Create EFS for Gitea container (mount volume for dags)
+# --- Stage 4 ---
 - Create ECS Service for Gitea & IAM Roles
 - Create ECS Services for Airflow & IAM Roles
 	- 5 long-running ECS services
@@ -56,12 +57,13 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 		airflow-worker  
 		airflow-triggerer  
 		airflow-dag-processor
-- Create certificate and route53
-
-# --- Stage 4 ---
-- Test push dag to Gitea
-
+- Create EFS for Gitea container (mount volume for dags)
+- Set up CloudMap for network communication within ECS cluster
+- Set up GitDagBundle for Airflow syncing with Gitea repo
+- Create ALB, target groups & listener rules
+  
 # --- Stage 5 ---
+- Test push dag to Gitea
 - Test dbt + Snowflake pipeline on airflow
 ```
 ---
@@ -241,13 +243,13 @@ User "admin" created with role "Admin"
 terraform apply --auto-approve
 ```
 
-##### Stage 3a - Set up ECS tasks
+##### Stage 4a - Set up ECS tasks
 
 - I choose AWS Fargate as the compute 
 	- we just request the resources we need (CPU & Memory)
 	- Use spot instance `capacity_provider = "FARGATE_SPOT"` to save money (for testing)
 ![](images/08_ecs.png)
-##### Stage 3b - Set up EFS
+##### Stage 4b - Set up EFS
 
 - Flow
 ```ruby
@@ -267,11 +269,11 @@ Airflow (ECS) <- ALB
 
 ![](images/07_efs.png)
 
-##### Stage 3c - Set up CloudMap
+##### Stage 4c - Set up CloudMap
 
 ![](images/06_cloudmap.png)
 
-##### Stage 3d - Set up GitDagBundle
+##### Stage 4d - Set up GitDagBundle
 
 ```ruby
 # Flow
@@ -303,7 +305,7 @@ Airflow Dag Processor
 ```
 Make sure the **Gitea security group allows inbound 3000 from the Airflow security group**.
 
-##### Stage 3e - Set up ALB
+##### Stage 4e - Set up ALB
 
 - approach
 ```ruby
