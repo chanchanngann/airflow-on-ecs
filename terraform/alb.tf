@@ -28,45 +28,42 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+  # redirect to 443
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.alb.arn
+  port              = 443
+  protocol          = "HTTPS"
+
+  certificate_arn   = var.airflow_cert_arn
+  ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
   default_action {
     type = "fixed-response"
 
     fixed_response {
       content_type = "text/plain"
-      message_body = "Unknown host"
+      message_body = "Not found"
       status_code  = "404"
     }
   }
-  # EVERYTHING arriving on port 80 goes to Airflow
-  # hide this part if redirect to 443
-  # default_action {
-  #   type             = "forward"
-  #   target_group_arn = aws_lb_target_group.airflow.arn
-  # }
-
-  # redirect to 443
-  # default_action {
-  #   type = "redirect"
-
-  #   redirect {
-  #     port        = "443"
-  #     protocol    = "HTTPS"
-  #     status_code = "HTTP_301"
-  #   }
-  # }
 }
 
-# resource "aws_lb_listener" "airflow_web_https" {
-#   load_balancer_arn = aws_lb.alb.arn
-#   port              = 443
-#   protocol          = "HTTPS"
-#   certificate_arn   = aws_acm_certificate.airflow_cert.arn
-
-#   default_action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.airflow.arn
-#   }
-# }
+resource "aws_lb_listener_certificate" "gitea" {
+  listener_arn    = aws_lb_listener.https.arn
+  certificate_arn = var.gitea_cert_arn
+}
 
 ###################################
 # ALB security group
@@ -85,24 +82,15 @@ resource "aws_security_group" "alb_sg" {
 # --------------------
 # ingress
 # --------------------
-resource "aws_vpc_security_group_ingress_rule" "alb_allow_http" {
+
+resource "aws_vpc_security_group_ingress_rule" "allow_https" {
   security_group_id = aws_security_group.alb_sg.id
-  description       = "HTTP access"
-  from_port = 80
-  to_port   = 80
+  description       = "HTTPS access"
+  from_port = 443
+  to_port   = 443
   ip_protocol  = "tcp"
-  cidr_ipv4         = "0.0.0.0/0"
-
+  cidr_ipv4         = var.allowed_https_cidrs
 }
-
-# resource "aws_vpc_security_group_ingress_rule" "allow_https" {
-#   security_group_id = aws_security_group.alb_sg.id
-#   description       = "HTTPS access"
-#   from_port = 443
-#   to_port   = 443
-#   ip_protocol  = "tcp"
-#   cidr_ipv4         = "0.0.0.0/0"
-# }
 
 # --------------------
 # egress
