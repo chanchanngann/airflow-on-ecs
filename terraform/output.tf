@@ -54,6 +54,7 @@ output "airflow_db_postgres_username" {
 
 output "airflow_db_postgres_password" {
   value = random_string.airflow_db_password.id
+  sensitive = true
 }
 
 
