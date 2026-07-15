@@ -233,7 +233,7 @@ aws ecs describe-tasks \
 ```ruby
 User "admin" created with role "Admin"
 ```
-- Then, the aiflow-init task will stop and show `Essential container in task exited`
+- Then, the airflow-init task will stop and show `Essential container in task exited`
 
 ---
 ### Stage 4 - Set up the remaining blocks
@@ -330,12 +330,11 @@ https://airflow.rachel.com → ALB HTTPS listener → HTTP inside VPC -> Airflow
 https://gitea.rachel.com → same ALB HTTPS listener → HTTP inside VPC -> Gitea ECS service
 ```
 
-1. Create a self-signed certificate, import to ACM and annotate the Ingress to use the ACM cert ARN.
-   - create certificate
+1. Create a self-signed certificate, import to ACM and annotate the ALB listener to use the ACM cert ARN.
+   - create certificate locally
    - import the cert to ACM and copy the cert ARN value.
-   - then add the cert to ALB listener:  `certificate_arn   = var.airflow_cert_arn`
+   - then add the cert to ALB listener:  `certificate_arn = var.airflow_cert_arn`
 ```ruby
-
 # private key
 openssl genrsa -out airflow.key 2048
 # use the private key to generate a self-signed cert
@@ -344,6 +343,17 @@ openssl req -new -x509 -key airflow.key -out airflow.crt -days 365 -subj "/CN=ai
 # repeat for gitea
 openssl genrsa -out gitea.key 2048
 openssl req -new -x509 -key gitea.key -out gitea.crt -days 365 -subj "/CN=gitea.rachel.com"
+```
+
+```ruby
+# terraform code for ALB listener
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.alb.arn
+  port              = 443
+  protocol          = "HTTPS"
+  
+  certificate_arn   = var.airflow_cert_arn
+  ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 ```
 
 ![](images/09_alb.png)
