@@ -47,6 +47,7 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 - Create Redis (Celery broker)
 - Create the ECS cluster that will host all Airflow services
 - Create & Run airflow-init ECS task (one-off task) to initialize the metadata database before starting the long-running services.
+- Create Gitea user and database in RDS
    
 # --- Stage 4 ---
 - Create ECS Service for Gitea & IAM Roles
@@ -152,6 +153,7 @@ docker push \
 ---
 ### Stage 3 - Set up RDS, Redis and run airflow-init task
 
+##### RDS
 1. Create RDS
 ```ruby
 terraform apply -target=aws_db_instance.airflow_db
@@ -189,17 +191,18 @@ lsof -i :5432
 psql -h localhost -p 5432 -U airflow airflow
 ```
 ![](images/04_rds_psql.png)
-
-3. Create Redis (ElasticCache)
+##### Redis
+Create Redis (ElasticCache)
 ```ruby
 terraform apply -target=aws_elasticache_cluster.redis --auto-approve
 terraform apply -target=aws_vpc_security_group_egress_rule.redis_allow_all_traffic_ipv4 --auto-approve
 ```
-
-4. Create ECS Cluster 
+##### ECS Cluster
+Create ECS Cluster 
 ```ruby
 terraform apply -target=aws_ecs_cluster.airflow --auto-approve
 ```
+##### Airflow init-task
 5. Create airflow init task definition
 ```ruby
 terraform apply -target=aws_ecs_task_definition.airflow_init --auto-approve
@@ -237,6 +240,72 @@ User "admin" created with role "Admin"
 ```
 - Then, the airflow-init task will stop and show `Essential container in task exited`
 
+##### Gitea
+1. Connect to RDS Postgres from bastion
+```ruby
+# connect to RDS
+psql \
+  "host=<rds-endpoint> \
+   port=5432 \
+   dbname=airflow \
+   user=<master-user> \
+   sslmode=require"
+```
+
+2. Create Gitea user and Gitea database in RDS Postgres.
+```sql
+-- create user
+CREATE ROLE gitea  
+LOGIN  
+PASSWORD 'gitea';
+
+-- verify user
+SELECT rolname  
+FROM pg_roles  
+WHERE rolname = 'gitea';
+
+-- create db
+CREATE DATABASE gitea;
+
+-- connect to another database instead of gitea
+\c airflow
+
+-- alter owner
+ALTER DATABASE gitea OWNER TO gitea;
+
+-- connect to database gitea
+\c gitea
+
+-- switch to user gitea
+set role gitea;
+
+-- create schema
+CREATE SCHEMA gitea;
+
+-- verify
+SELECT *
+FROM information_schema.schemata  
+WHERE schema_name = 'gitea';
+
+-- set default search path (default schema), original default is public
+ALTER ROLE gitea  
+SET search_path TO gitea; -- now even you dont specify schema, psql know you mean schema gitea
+
+-- reconnect as gitea, then verify search path
+SHOW search_path;
+```
+*Note:* On RDS, the master user is **not a true superuser**, that means this master user does **not** have permission to create a database **owned** by another role but it usually has enough privileges to create databases. you can't do `CREATE DATABASE gitea OWNER gitea;` directly.
+=> Create the database first, then transfer ownership.
+
+3. test login as gitea user
+```ruby
+psql \
+  "host=<rds-endpoint> \
+   port=5432 \
+   dbname=gitea_db \
+   user=gitea \
+   sslmode=require"
+```
 ---
 ### Stage 4 - Set up the remaining blocks
 
@@ -250,6 +319,7 @@ terraform apply --auto-approve
 	- we just request the resources we need (CPU & Memory)
 	- Use spot instance `capacity_provider = "FARGATE_SPOT"` to save money (for testing)
 ![](images/08_ecs.png)
+
 ##### Stage 4b - Set up EFS
 
 - Flow
@@ -259,17 +329,31 @@ EFS  (Mount Targets  +  EFS Access Point  +  /data mount)
 Gitea Task Volume (gitea-data)
   ↓
 Gitea Container Mount (/data)
-  ↓
-Gitea (ECS) <- ALB
-  ↓
-gitdagbundle
-  ↓
-Airflow (ECS) <- ALB
 ```
-
+=> Everything under `/data` in gitea container will now be persisted in EFS.
 
 ![](images/07_efs.png)
 
+- Inspect ownership of the data directory in gitea container in order to determine what uid to be used at EFS `access point` 
+```ruby
+# inside gitea container
+
+# look for the Gitea process
+ps aux
+#  19 git       0:02 /usr/local/bin/gitea web
+
+# switch user
+su git
+
+id
+# uid=1000(git) gid=1000(git) groups=1000(git),1000(git)
+
+grep git /etc/passwd
+# git:x:1000:1000::/data/git:/bin/bash
+
+ls -ld /data
+# root
+```
 ##### Stage 4c - Set up ALB
 
 - approach
@@ -385,6 +469,8 @@ gitea.airflow.local
 10.0.2.88
 ```
 
+Similarly, the airflow worker/triggerer/dag processor/scheduler can reach airflow api server via service discovery (important in remote logging).
+
 1. You create a private DNS zone `airflow.local` inside the VPC. 
 
 ```ruby
@@ -400,10 +486,18 @@ resource "aws_service_discovery_private_dns_namespace" "main" {
 ```ruby
 resource "aws_service_discovery_service" "gitea" {
   name = "gitea"
-}
+...
 ```
-3. Register the service to the ECS service of Gitea.
 
+3. Create  `aws_service_discovery_service` airflow_api.
+```ruby
+resource "aws_service_discovery_service" "airflow_api" {
+  name = "airflow-api" # create airflow-api.airflow.local
+  ...
+```
+4. Register the service to the ECS service of gitea and airflow apiserver.
+
+- gitea
 ```ruby
 resource "aws_ecs_service" "gitea" {
 	...
@@ -414,7 +508,19 @@ resource "aws_ecs_service" "gitea" {
 ```
 => ECS automatically registers/deregisters the task IP when ECS task starts/stops. 
 
-4.  Test connection to Gitea from inside the Airflow container.
+- airflow_apiserver
+```ruby
+resource "aws_ecs_service" "airflow_apiserver" {
+...
+
+  # so that airflow worker/triggerer/dag processor/scheduler can reach api server via service discovery (connect Amazon ECS services with Cloud Map)
+  service_registries {
+    registry_arn = aws_service_discovery_service.airflow_api.arn
+  }
+```
+5.  Test connection  from inside the Airflow container.
+
+- connection to Gitea from airflow container
 ```ruby
 # enter airflow container
 aws ecs execute-command \
@@ -430,6 +536,15 @@ su airflow
 getent hosts gitea.airflow.local  
 curl -I http://gitea.airflow.local:3000  
 git ls-remote http://gitea.airflow.local:3000/demo/airflow_test.git
+```
+
+- connection to Airflow apiserver from other airflow containers
+```ruby
+
+# inside airflow container
+su airflow
+
+curl -I http://airflow-api.airflow.local:8080/execution/
 ```
 ##### Stage 4e - Set up GitDagBundle
 
