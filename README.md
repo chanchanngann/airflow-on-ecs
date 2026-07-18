@@ -45,8 +45,8 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 # --- Stage 3 ---
 - Create RDS (airflow metadata DB)
 - Create Redis (Celery broker)
-- Create ECS cluster
-- Create & Run airflow-init ECS task (one-off task)
+- Create the ECS cluster that will host all Airflow services
+- Create & Run airflow-init ECS task (one-off task) to initialize the metadata database before starting the long-running services.
    
 # --- Stage 4 ---
 - Create ECS Service for Gitea & IAM Roles
@@ -62,7 +62,6 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 - Set up CloudMap for network communication within ECS cluster
 - Set up GitDagBundle for Airflow syncing with Gitea repo
 
-  
 # --- Stage 5 ---
 - Test push dag to Gitea
 - Test dbt + Snowflake pipeline on airflow
@@ -113,7 +112,7 @@ terraform apply -target=aws_ecr_lifecycle_policy.airflow_lifecycle
 aws ecr get-login-password | docker login \  
 --username AWS \  
 --password-stdin \  
-123456789.dkr.ecr.xxx.amazonaws.com/airflow-ecr
+123456789.dkr.ecr.<region>.amazonaws.com/airflow-ecr
 ```
 7. Push the custom Airflow image to ECR
 ```ruby
@@ -171,7 +170,7 @@ Host airflow-db
 	HostName <bastion_public_ip>
 	User ec2-user
 	IdentityFile ~/.ssh/<key_pair>.pem
-	LocalForward 5432 airflow-postgres.xxx.xxx.rds.amazonaws.com:5432
+	LocalForward 5432 <rds-endpoint>.rds.amazonaws.com:5432
 ```
 - SSH into RDS from terminal
 ```ruby
@@ -209,6 +208,8 @@ terraform apply -target=aws_iam_role_policy_attachment.ecs_task_execution  --aut
 terraform apply -target=aws_iam_role_policy.access_secret_manager  --auto-approve
 terraform apply -target=aws_iam_role_policy.access_s3  --auto-approve
 ```
+`terraform apply -target` is used only to demonstrate the infrastructure build-up stage by stage.
+
 6. Manually start the ECS task `airlow-init`
    - this task will run `airflow_init.sh` which init the DB and create airflow user
 ```ruby
@@ -285,13 +286,13 @@ ALB
 │    └── Redirect -> 443  
 │
 └── :443
-	 ├─ Host = airflow.rachel.com -> airflow-tg -> airflow-container
-	 ├─ Host = gitea.rachel.com -> gitea-tg -> gitea-container
+	 ├─ Host = airflow.example.com -> airflow-tg -> airflow-container
+	 ├─ Host = gitea.example.com -> gitea-tg -> gitea-container
 	 └─ Default -> fixed-response 404
 
 
-https://airflow.rachel.com → ALB HTTPS listener → HTTP inside VPC -> Airflow ECS service  
-https://gitea.rachel.com → same ALB HTTPS listener → HTTP inside VPC -> Gitea ECS service
+https://airflow.example.com → ALB HTTPS listener → HTTP inside VPC -> Airflow ECS service  
+https://gitea.example.com → same ALB HTTPS listener → HTTP inside VPC -> Gitea ECS service
 ```
 
 1. Create a self-signed certificate, import to ACM and annotate the ALB listener to use the ACM cert ARN.
@@ -302,11 +303,11 @@ https://gitea.rachel.com → same ALB HTTPS listener → HTTP inside VPC -> Gite
 # private key
 openssl genrsa -out airflow.key 2048
 # use the private key to generate a self-signed cert
-openssl req -new -x509 -key airflow.key -out airflow.crt -days 365 -subj "/CN=airflow.rachel.com"
+openssl req -new -x509 -key airflow.key -out airflow.crt -days 365 -subj "/CN=airflow.example.com"
 
 # repeat for gitea
 openssl genrsa -out gitea.key 2048
-openssl req -new -x509 -key gitea.key -out gitea.crt -days 365 -subj "/CN=gitea.rachel.com"
+openssl req -new -x509 -key gitea.key -out gitea.crt -days 365 -subj "/CN=gitea.example.com"
 ```
 
 ```ruby
@@ -332,26 +333,27 @@ nslookup airflow-alb-xxx.<region_name>.elb.amazonaws.com
 sudo vi /etc/hosts
 
 # @hosts file, add the IP
-12.34.56.78 airflow.rachel.com
-12.34.56.78 gitea.rachel.com
+12.34.56.78 airflow.example.com
+12.34.56.78 gitea.example.com
 ```
 
 4. Go to chrome browser and enter airflow URL.
 ```ruby
-https://airflow.rachel.com
+https://airflow.example.com
 ```
 
 ![](images/10_airflow.png)
 
 5. Go to chrome browser and enter gitea URL.
 ```ruby
-https://gitea.rachel.com
+https://gitea.example.com
 ```
 ![](images/11_gitea.png)
 
 ##### Stage 4d - Set up CloudMap (aws service discovery service)
 
-`aws_service_discovery`  is the solution for ECS-to-ECS communication (internal traffic). The IP of each ECS service will change, so if you configure Airflow to reach Gitea via IP, the communication will break when Gitea IP changes.
+**Why CloudMap?**
+ECS task IPs will change, so if you configure Airflow to reach Gitea via IP, the communication will break when Gitea IP changes. Cloud Map provides a stable DNS name so Airflow can always locate the current Gitea task.
 
 `CloudMap` will update the IP tied to Gitea ECS service. From Airflow perspective, Gitea remains as
 ```python
@@ -427,25 +429,32 @@ su airflow
 
 getent hosts gitea.airflow.local  
 curl -I http://gitea.airflow.local:3000  
-git ls-remote http://gitea.airflow.local:3000/rachel/airflow_test.git
+git ls-remote http://gitea.airflow.local:3000/demo/airflow_test.git
 ```
 ##### Stage 4e - Set up GitDagBundle
 
-For Airflow 3.x, we can use `GitDagBundle` which allows Airflow to treat Git repository as a DAG source directly. Airflow will fetch DAGs from Git rather than relying on a shared filesystem.
+For Airflow 3.x, we can use `GitDagBundle` which allows Airflow to treat Git repository as a DAG source directly.
+
+**Why GitDagBundle?**
+GitDagBundle removes the need for shared DAG storage (such as EFS) for Airflow itself by allowing the DAG Processor to synchronize directly from Git. In this exercise, EFS is only used for persistent Gitea storage.
 
 For the set up, we need the git repo_url + Airflow connection for the private git repo. If the git repo is public, we probably don't need the Airflow connection part.
 
 ```ruby
 # Flow
-Git repo (Gitea)
-  ↓
+Git Push
+      ↓
+Gitea
+      ↓
 GitDagBundle
-  ↓
-Airflow Dag Processor
+      ↓
+Dag Processor
+      ↓
+Scheduler
 ```
 - `repo_url` (git repo) must be reachable **from the Airflow container**. 
   =>  I use `service discovery` to connect Amazon ECS services with DNS names.
-  repo_url = "http://gitea.internal:3000/rachel/airflow_test.git"
+  repo_url = "http://gitea.internal:3000/example/airflow_test.git"
 
 1. Set up Git connection in Airflow
 ![](images/12_airflow_conn.png)
@@ -463,7 +472,7 @@ Airflow Dag Processor
           classpath = "airflow.providers.git.bundles.git.GitDagBundle"
           kwargs = {
             tracking_ref = "main"
-            repo_url = "http://gitea.airflow.local:3000/rachel/airflow_test.git"
+            repo_url = "http://gitea.airflow.local:3000/demo/airflow_test.git"
             git_conn_id  = "gitea_git"
             refresh_interval = 30
           }
@@ -476,6 +485,7 @@ Airflow Dag Processor
 
 ---
 ### Stage 5 - Test dbt + Snowflake pipeline on Airflow
+
 1. Create dbt dag and dbt models in following structure
 ```ruby
 <tracking_repo>/
@@ -543,9 +553,9 @@ resource "aws_iam_role_policy_attachment" "access_ssm_airflow" {
 ```
 2. to ensure ECS task able to reach SSM, you need NAT gateway or following VPC endpoints.
 ```
-com.amazonaws.ap-northeast-2.ssmmessages
-com.amazonaws.ap-northeast-2.ssm
-com.amazonaws.ap-northeast-2.ec2messages
+com.amazonaws.<region>.ssmmessages
+com.amazonaws.<region>.ssm
+com.amazonaws.<region>.ec2messages
 ```
    => We have NAT gateway.
 
@@ -591,6 +601,15 @@ curl http://localhost:8080
 curl http://localhost:8080/api/v2/monitor/health
 ```
 => if you get response, then airflow is working fine.
+
+## Key Takeaways
+
+- Deployed Airflow 3.2 on ECS Fargate using Celery Executor.
+- Provisioned AWS infrastructure using Terraform.
+- Integrated GitDagBundle with a self-hosted Gitea repository.
+- Configured Cloud Map for service discovery between ECS services.
+- Used ECS Exec and AWS Systems Manager to troubleshoot running containers.
+- Integrate dbt with Snowflake on Airflow
 
 ---
 ## Cleanup
