@@ -32,7 +32,7 @@ worker task process
   → use it for S3 remote logging
 ```
 
-check insider airflow container
+Check inside the Airflow container
 ```ruby
 airflow config get-value core execution_api_server_url
 # => [warning  ] section/key [core/execution_api_server_url] not found in config [airflow._shared.configuration.parser] loc=parser.py:1360
