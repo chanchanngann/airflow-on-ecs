@@ -29,6 +29,12 @@ variable "enable_airflow_server" {
   default = false
 }
 
+variable "allowed_https_cidrs" {
+  type = string
+}
+
+
+
 ###################################
 # networking
 ###################################
@@ -246,8 +252,13 @@ variable "gitea_repo_url_for_git_dag_bundle" {
 #   type = string
 # }
 
+variable "airflow_cert_arn" {
+  type = string
+}
 
-
+variable "gitea_cert_arn" {
+  type = string
+}
 ###################################
 # Cloudwatch
 ###################################

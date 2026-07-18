@@ -33,7 +33,7 @@ resource "aws_lb_target_group" "airflow" {
 
 
 resource "aws_lb_listener_rule" "airflow_http" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.https.arn
   priority     = 10 # must be unique within a listener, lower number = evaluate earlier
 
   condition {

@@ -29,7 +29,7 @@ resource "aws_lb_target_group" "gitea" {
 }
 
 resource "aws_lb_listener_rule" "gitea_http" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.https.arn
   priority     = 20 # must be unique within a listener, lower number = evaluate earlier
 
   condition {
