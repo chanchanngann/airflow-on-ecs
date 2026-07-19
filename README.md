@@ -310,15 +310,15 @@ psql \
 ---
 ### Stage 4 - Set up the remaining blocks
 
-- Set up all the remaining blocks (airflow & gitea ecs tasks, ALB, ACM, EFS, CloudMap)
+- Set up all the remaining blocks (Airflow & Gitea ECS services, ALB, ACM certs, EFS and AWS CloudMap)
 ```ruby
 terraform apply --auto-approve
 ```
 ##### Stage 4a - Set up ECS tasks
 
-- I choose AWS Fargate as the compute 
-	- we just request the resources we need (CPU & Memory)
-	- Use spot instance `capacity_provider = "FARGATE_SPOT"` to save money (for testing)
+- AWS Fargate is used as the compute engine for the ECS services.
+	- We only need to define the required CPU & Memory in each task definition (no need to provision and manage EC2 instances), AWS manages the underlying compute resources.
+	- Use `capacity_provider = "FARGATE_SPOT"` to reduce cost (for this testing environment).
 ![823](images/08_ecs.png)
 
 ##### Stage 4b - Set up EFS
