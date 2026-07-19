@@ -17,7 +17,7 @@ Finally, a simple dag is deployed on Airflow to integrate dbt for data transform
 	- DAG Processor  
 - Integrate dbt for data transformation in Snowflake
 
-![architecture](images/01_airflow_on_ecs.png)
+![architecture](images/01_airflow_ecs.png)
 ### Building Blocks
 - Application Load Balancer (ALB) in public subnets for Airflow UI access  
 - Internet Gateway and NAT Gateway for internet connectivity  
@@ -426,7 +426,7 @@ sudo vi /etc/hosts
 https://airflow.example.com
 ```
 
-![](images/10_airflow.png)
+![](images/10_airflow_ui.png)
 
 5. Go to chrome browser and enter gitea URL.
 ```ruby
