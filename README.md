@@ -314,7 +314,7 @@ psql \
 ```ruby
 terraform apply --auto-approve
 ```
-##### Stage 4a - Set up ECS tasks
+##### Stage 4a - Set up ECS services
 
 - AWS Fargate is used as the compute engine for the ECS services.
 	- We only need to define the required CPU & Memory in each task definition (no need to provision and manage EC2 instances), AWS manages the underlying compute resources.
