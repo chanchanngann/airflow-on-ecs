@@ -297,6 +297,7 @@ SHOW search_path;
 *Note:* On RDS, the master user is **not a true superuser**, that means this master user does **not** have permission to create a database **owned** by another role but it usually has enough privileges to create databases. you can't do `CREATE DATABASE gitea OWNER gitea;` directly.
 => Create the database first, then transfer ownership.
 
+![805](images/05_rds_gitea.png)
 3. test login as gitea user
 ```ruby
 psql \
@@ -318,7 +319,7 @@ terraform apply --auto-approve
 - I choose AWS Fargate as the compute 
 	- we just request the resources we need (CPU & Memory)
 	- Use spot instance `capacity_provider = "FARGATE_SPOT"` to save money (for testing)
-![](images/08_ecs.png)
+![823](images/08_ecs.png)
 
 ##### Stage 4b - Set up EFS
 
@@ -332,7 +333,7 @@ Gitea Container Mount (/data)
 ```
 => Everything under `/data` in gitea container will now be persisted in EFS.
 
-![](images/07_efs.png)
+![788](images/07_efs.png)
 
 - Inspect ownership of the data directory in gitea container in order to determine what uid to be used at EFS `access point` 
 ```ruby
@@ -405,7 +406,7 @@ resource "aws_lb_listener" "https" {
   ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 ```
 
-![](images/09_alb.png)
+![772](images/09_alb.png)
 
 2. When ALB is provisioned, get the IP of the ALB.
 ```ruby
@@ -426,13 +427,13 @@ sudo vi /etc/hosts
 https://airflow.example.com
 ```
 
-![](images/10_airflow_ui.png)
+![716](images/10_airflow_ui.png)
 
 5. Go to chrome browser and enter gitea URL.
 ```ruby
 https://gitea.example.com
 ```
-![](images/11_gitea.png)
+![704](images/11_gitea_repo.png)
 
 ##### Stage 4d - Set up CloudMap (aws service discovery service)
 
@@ -479,7 +480,7 @@ resource "aws_service_discovery_private_dns_namespace" "main" {
   vpc  = module.vpc.vpc_id
 }
 ```
-![](images/06_cloudmap.png)
+![899](images/06_cloudmap.png)
 
 2. Create  `aws_service_discovery_service` gitea.
    => This creates `gitea.airflow.local`.
@@ -572,7 +573,7 @@ Scheduler
   repo_url = "http://gitea.internal:3000/example/airflow_test.git"
 
 1. Set up Git connection in Airflow
-![](images/12_airflow_conn.png)
+![858](images/12_airflow_conn.png)
 
 
 2. Configure the DAG bundle in Airflow config via ECS env vars setting and then RESTART the Airflow ECS services. 
@@ -621,8 +622,8 @@ Scheduler
 5. Trigger the dag run.
 6. Check the task log.
 7. Check if data successfully loaded to Snowflake.
-![](images/14_snowflake_lineage.png)
-![](images/15_snowflake_data.png)
+![714](images/14_snowflake_lineage.png)
+![718](images/15_snowflake_data.png)
 
 ---
 ## Additional: debug container via SSM
